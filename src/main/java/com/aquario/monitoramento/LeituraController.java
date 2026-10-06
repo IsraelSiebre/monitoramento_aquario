@@ -40,4 +40,16 @@ public class LeituraController {
 
         return ResponseEntity.ok(leituras);
     }
+
+    @PostMapping("/delete")
+    public ResponseEntity<Void> resetLeituras(@RequestParam String senha) {
+        if (senha.equals("deixeiapagar")) {
+            service.apagarLeituras();
+            return ResponseEntity.ok().build();
+        }
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .build();
+    }
 }
