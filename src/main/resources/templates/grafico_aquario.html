@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Monitoramento do Aquário</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f7fa;
+            color: #1f2937;
+            padding: 30px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: auto;
+        }
+
+        h1 {
+            margin-bottom: 25px;
+        }
+
+        .filtros {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: end;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .campo {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        label {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        input {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .card h3 {
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 10px;
+        }
+
+        .valor {
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .grafico {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .grafico-container {
+            position: relative;
+            height: 450px;
+        }
+
+        #status {
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .erro {
+            color: #dc2626;
+        }
+
+        @media (max-width: 800px) {
+            .cards {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 500px) {
+            .cards {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🐠 Monitoramento do Aquário</h1>
+
+    <!-- =========================
+         FILTROS
+         ========================= -->
+
+    <div class="filtros">
+
+        <div class="campo">
+            <label for="dataInicial">
+                Data/Hora inicial
+            </label>
+
+            <input
+                    type="datetime-local"
+                    id="dataInicial">
+        </div>
+
+        <div class="campo">
+            <label for="dataFinal">
+                Data/Hora final
+            </label>
+
+            <input
+                    type="datetime-local"
+                    id="dataFinal">
+        </div>
+
+        <button onclick="aplicarFiltro()">
+            Filtrar
+        </button>
+
+        <button onclick="limparFiltro()">
+            Limpar
+        </button>
+
+    </div>
+
+
+    <!-- =========================
+         STATUS
+         ========================= -->
+
+    <div id="status">
+        Carregando dados...
+    </div>
+
+
+    <!-- =========================
+         INDICADORES
+         ========================= -->
+
+    <div class="cards">
+
+        <div class="card">
+            <h3>Temperatura atual</h3>
+
+            <div
+                    class="valor"
+                    id="temperaturaAtual">
+
+                -- °C
+
+            </div>
+        </div>
+
+
+        <div class="card">
+            <h3>Temperatura mínima</h3>
+
+            <div
+                    class="valor"
+                    id="temperaturaMinima">
+
+                -- °C
+
+            </div>
+        </div>
+
+
+        <div class="card">
+            <h3>Temperatura máxima</h3>
+
+            <div
+                    class="valor"
+                    id="temperaturaMaxima">
+
+                -- °C
+
+            </div>
+        </div>
+
+
+        <div class="card">
+            <h3>Temperatura média</h3>
+
+            <div
+                    class="valor"
+                    id="temperaturaMedia">
+
+                -- °C
+
+            </div>
+        </div>
+
+    </div>
+
+
+    <!-- =========================
+         GRÁFICO
+         ========================= -->
+
+    <div class="grafico">
+
+        <div class="grafico-container">
+
+            <canvas id="graficoTemperatura"></canvas>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+    // API hospedada no mesmo Spring Boot
+    const API_URL = "/api/leituras";
+
+    let leituras = [];
+    let grafico = null;
+
+    async function carregarLeituras() {
+
+        const status = document.getElementById("status");
+
+        try {
+
+            status.innerText = "Carregando leituras...";
+            status.classList.remove("erro");
+
+            const response = await fetch(API_URL);
+
+            if (!response.ok) {
+                throw new Error(
+                    "Erro HTTP: " + response.status
+                );
+            }
+
+            leituras = await response.json();
+
+            leituras.sort(
+                (a, b) =>
+                    new Date(a.dataHora) -
+                    new Date(b.dataHora)
+            );
+
+            status.innerText =
+                leituras.length + " leituras carregadas";
+
+            atualizarDashboard(leituras);
+
+        } catch (erro) {
+
+            console.error(erro);
+
+            status.innerText =
+                "Erro ao carregar dados da API: " +
+                erro.message;
+
+            status.classList.add("erro");
+        }
+    }
+
+    // ==================================================
+    // FILTRAR
+    // ==================================================
+
+    function aplicarFiltro() {
+
+        const inicial =
+            document.getElementById(
+                "dataInicial"
+            ).value;
+
+
+        const final =
+            document.getElementById(
+                "dataFinal"
+            ).value;
+
+
+        let filtradas = [...leituras];
+
+
+        // Data inicial
+
+        if (inicial) {
+
+            const dataInicial =
+                new Date(inicial);
+
+            filtradas =
+                filtradas.filter(
+                    leitura =>
+                        new Date(
+                            leitura.dataHora
+                        ) >= dataInicial
+                );
+
+        }
+
+
+        // Data final
+
+        if (final) {
+
+            const dataFinal =
+                new Date(final);
+
+            filtradas =
+                filtradas.filter(
+                    leitura =>
+                        new Date(
+                            leitura.dataHora
+                        ) <= dataFinal
+                );
+
+        }
+
+
+        document.getElementById(
+            "status"
+        ).innerText =
+            filtradas.length +
+            " leituras no período";
+
+
+        atualizarDashboard(filtradas);
+
+    }
+
+
+    // ==================================================
+    // LIMPAR FILTRO
+    // ==================================================
+
+    function limparFiltro() {
+
+        document.getElementById(
+            "dataInicial"
+        ).value = "";
+
+
+        document.getElementById(
+            "dataFinal"
+        ).value = "";
+
+
+        document.getElementById(
+            "status"
+        ).innerText =
+            leituras.length +
+            " leituras carregadas";
+
+
+        atualizarDashboard(leituras);
+
+    }
+
+
+    // ==================================================
+    // ATUALIZAR DASHBOARD
+    // ==================================================
+
+    function atualizarDashboard(dados) {
+
+        if (dados.length === 0) {
+
+            document.getElementById(
+                "temperaturaAtual"
+            ).innerText = "-- °C";
+
+
+            document.getElementById(
+                "temperaturaMinima"
+            ).innerText = "-- °C";
+
+
+            document.getElementById(
+                "temperaturaMaxima"
+            ).innerText = "-- °C";
+
+
+            document.getElementById(
+                "temperaturaMedia"
+            ).innerText = "-- °C";
+
+
+            atualizarGrafico([]);
+
+            return;
+
+        }
+
+
+        // ==============================================
+        // Temperaturas
+        // ==============================================
+
+        const temperaturas =
+            dados.map(
+                leitura =>
+                    Number(leitura.temperatura)
+            );
+
+
+        // Atual
+
+        const ultima =
+            dados[dados.length - 1];
+
+
+        document.getElementById(
+            "temperaturaAtual"
+        ).innerText =
+            Number(
+                ultima.temperatura
+            ).toFixed(2) +
+            " °C";
+
+
+        // Mínima
+
+        const minima =
+            Math.min(...temperaturas);
+
+
+        document.getElementById(
+            "temperaturaMinima"
+        ).innerText =
+            minima.toFixed(2) +
+            " °C";
+
+
+        // Máxima
+
+        const maxima =
+            Math.max(...temperaturas);
+
+
+        document.getElementById(
+            "temperaturaMaxima"
+        ).innerText =
+            maxima.toFixed(2) +
+            " °C";
+
+
+        // Média
+
+        const soma =
+            temperaturas.reduce(
+                (total, temperatura) =>
+                    total + temperatura,
+                0
+            );
+
+
+        const media =
+            soma /
+            temperaturas.length;
+
+
+        document.getElementById(
+            "temperaturaMedia"
+        ).innerText =
+            media.toFixed(2) +
+            " °C";
+
+
+        // ==============================================
+        // Gráfico
+        // ==============================================
+
+        atualizarGrafico(dados);
+
+    }
+
+
+    // ==================================================
+    // GRÁFICO
+    // ==================================================
+
+    function atualizarGrafico(dados) {
+
+        const canvas =
+            document.getElementById(
+                "graficoTemperatura"
+            );
+
+
+        const labels =
+            dados.map(
+                leitura =>
+                    formatarData(
+                        leitura.dataHora
+                    )
+            );
+
+
+        const temperaturas =
+            dados.map(
+                leitura =>
+                    leitura.temperatura
+            );
+
+
+        // Se gráfico já existe,
+        // destruir antes de recriar
+
+        if (grafico) {
+
+            grafico.destroy();
+
+        }
+
+
+        grafico =
+            new Chart(
+                canvas,
+                {
+
+                    type: "line",
+
+                    data: {
+
+                        labels: labels,
+
+                        datasets: [
+
+                            {
+                                label:
+                                    "Temperatura (°C)",
+
+                                data:
+                                    temperaturas,
+
+                                borderWidth: 2,
+
+                                tension: 0.25,
+
+                                pointRadius: 2
+                            }
+
+                        ]
+
+                    },
+
+
+                    options: {
+
+                        responsive: true,
+
+                        maintainAspectRatio: false,
+
+
+                        interaction: {
+
+                            mode: "index",
+
+                            intersect: false
+
+                        },
+
+
+                        plugins: {
+
+                            legend: {
+
+                                display: true
+
+                            },
+
+                            tooltip: {
+
+                                enabled: true
+
+                            }
+
+                        },
+
+
+                        scales: {
+
+                            x: {
+
+                                title: {
+
+                                    display: true,
+
+                                    text:
+                                        "Data / Hora"
+
+                                }
+
+                            },
+
+
+                            y: {
+
+                                title: {
+
+                                    display: true,
+
+                                    text:
+                                        "Temperatura (°C)"
+
+                                }
+
+                            }
+
+                        }
+
+                    }
+
+                }
+            );
+
+    }
+
+
+    // ==================================================
+    // FORMATAR DATA
+    // ==================================================
+
+    function formatarData(dataHora) {
+
+        const data =
+            new Date(dataHora);
+
+
+        return data.toLocaleString(
+            "pt-BR",
+            {
+
+                day: "2-digit",
+
+                month: "2-digit",
+
+                hour: "2-digit",
+
+                minute: "2-digit"
+
+            }
+        );
+
+    }
+
+
+    // ==================================================
+    // INICIALIZAÇÃO
+    // ==================================================
+
+    carregarLeituras();
+
+</script>
+
+</body>
+</html>
